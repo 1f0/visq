@@ -48,22 +48,9 @@ float g_Zoom = 1.0f;
 // Shape orientation (stored as a quaternion)
 float g_Rotation[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-// Routine to set a quaternion from a rotation axis and angle
-// ( input axis = float[3] angle = float  output: quat = float[4] )
-void SetQuaternionFromAxisAngle(const float *axis, float angle, float *quat)
-{
-  float sina2, norm;
-  sina2 = (float)sin(0.5f * angle);
-  norm = (float)sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
-  quat[0] = sina2 * axis[0] / norm;
-  quat[1] = sina2 * axis[1] / norm;
-  quat[2] = sina2 * axis[2] / norm;
-  quat[3] = (float)cos(0.5f * angle);
-}
-
 // Routine to convert a quaternion to a 4x4 matrix
 // ( input: quat = float[4]  output: mat = float[4*4] )
-void ConvertQuaternionToMatrix(const float *quat, float *mat)
+Matrix4f QuaternionToMatrix(const float *quat)
 {
   float yy2 = 2.0f * quat[1] * quat[1];
   float xy2 = 2.0f * quat[0] * quat[1];
@@ -74,32 +61,24 @@ void ConvertQuaternionToMatrix(const float *quat, float *mat)
   float wy2 = 2.0f * quat[3] * quat[1];
   float wx2 = 2.0f * quat[3] * quat[0];
   float xx2 = 2.0f * quat[0] * quat[0];
-  mat[0 * 4 + 0] = -yy2 - zz2 + 1.0f;
-  mat[0 * 4 + 1] = xy2 + wz2;
-  mat[0 * 4 + 2] = xz2 - wy2;
-  mat[0 * 4 + 3] = 0;
-  mat[1 * 4 + 0] = xy2 - wz2;
-  mat[1 * 4 + 1] = -xx2 - zz2 + 1.0f;
-  mat[1 * 4 + 2] = yz2 + wx2;
-  mat[1 * 4 + 3] = 0;
-  mat[2 * 4 + 0] = xz2 + wy2;
-  mat[2 * 4 + 1] = yz2 - wx2;
-  mat[2 * 4 + 2] = -xx2 - yy2 + 1.0f;
-  mat[2 * 4 + 3] = 0;
-  mat[3 * 4 + 0] = mat[3 * 4 + 1] = mat[3 * 4 + 2] = 0;
-  mat[3 * 4 + 3] = 1;
-}
 
-// Routine to multiply 2 quaternions (ie, compose rotations)
-// ( input q1 = float[4] q2 = float[4]  output: qout = float[4] )
-void MultiplyQuaternions(const float *q1, const float *q2, float *qout)
-{
-  float qr[4];
-  qr[0] = q1[3] * q2[0] + q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1];
-  qr[1] = q1[3] * q2[1] + q1[1] * q2[3] + q1[2] * q2[0] - q1[0] * q2[2];
-  qr[2] = q1[3] * q2[2] + q1[2] * q2[3] + q1[0] * q2[1] - q1[1] * q2[0];
-  qr[3] = q1[3] * q2[3] - (q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2]);
-  qout[0] = qr[0]; qout[1] = qr[1]; qout[2] = qr[2]; qout[3] = qr[3];
+  Matrix4f mat;
+  mat(0, 0) = -yy2 - zz2 + 1.0f;
+  mat(0, 1) = xy2 + wz2;
+  mat(0, 2) = xz2 - wy2;
+  mat(0, 3) = 0;
+  mat(1, 0) = xy2 - wz2;
+  mat(1, 1) = -xx2 - zz2 + 1.0f;
+  mat(1, 2) = yz2 + wx2;
+  mat(1, 3) = 0;
+  mat(2, 0) = xz2 + wy2;
+  mat(2, 1) = yz2 - wx2;
+  mat(2, 2) = -xx2 - yy2 + 1.0f;
+  mat(2, 3) = 0;
+  mat(3, 0) = mat(3, 1) = mat(3, 2) = 0;
+  mat(3, 3) = 1;
+
+  return mat;
 }
 
 // Return elapsed time in milliseconds
@@ -111,7 +90,6 @@ int GetTimeMs()
   return (int)GetTickCount();
 #endif
 }
-
 
 float para[10] = {3, 0, 0, 0,  //ABCD
                   4, 0, 0,     //EFG
@@ -125,8 +103,14 @@ Vec3 raycast(float x, float y) {
   para[1], para[4], para[5], para[6],
   para[2], para[5], para[7], para[8],
   para[3], para[6], para[8], para[9];
+
+  Matrix4f R = QuaternionToMatrix(g_Rotation);
+  Matrix4f Z = Matrix4f::Identity() / g_Zoom;
+  Z(3,3) = 1;
+
   Vec4 C(0, 0, 1, 0);
-  Vec4 X(x, y, 0, 1);
+  Vec4 Xp(x, y, 0, 1);
+  Vec4 X  = R * Z * Xp;
 
   float a = C.transpose() * Q * C;
   float b = 2 * X.transpose() * Q * C;
