@@ -15,6 +15,8 @@ find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 include_directories( ${OPENGL_INCLUDE_DIRS}  ${GLUT_INCLUDE_DIRS} )
 
+include_directories(antweakbar/include)
+
 # set bin && lib
 SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/lib)
 SET(ARCHIVE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/lib)
