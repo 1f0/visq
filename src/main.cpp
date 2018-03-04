@@ -109,17 +109,18 @@ Vec3 raycast(float x, float y) {
   Z(3,3) = 1;
 
   Vec4 C(0, 0, 1, 0);
-  Vec4 Xp(x, y, 0, 1);
-  Vec4 X  = R * Z * Xp;
+  Vec4 X(x, y, 0, 1);
 
-  float a = C.transpose() * Q * C;
-  float b = 2 * X.transpose() * Q * C;
-  float c = X.transpose() * Q * X;
+  Matrix4f QRZ = Z.transpose() * R.transpose() * Q * R * Z;
+
+  float a = C.transpose() * QRZ * C;
+  float b = 2 * X.transpose() * QRZ * C;
+  float c = X.transpose() * QRZ * X;
 
   float delta = b * b - 4 * a * c;
   if (delta < 0)
     return Vec3(0, 0, 0);
-  float z;
+  float z, z2;
 
   if (a == 0) {//highlight z=[-\inf, \inf]
     if (fabs(c) < 0.005)
@@ -128,17 +129,29 @@ Vec3 raycast(float x, float y) {
       return Vec3(0, 0, 0);
   } else {
     z = (-b + sqrt(delta)) / (2 * a);
+    z2 = (-b - sqrt(delta)) / (2 * a);
   }
 
-  Vec3 n =  (Q * Vec4(x, y, z, 1)).head(3).normalized();
+  Vec4 RZX = R * Z * Vec4(x, y, z, 1);
+  Vec4 RZX2 = R * Z * Vec4(x, y, z2, 1);
+  float back = 1.0;
+  if(fabs(RZX[2])>1){
+    RZX[2] = RZX2[2];
+    back = -1.0;
+  }
 
-  float diffuse = max0(n.dot(light));
+  if (fabs(RZX[0]) > 1 || fabs(RZX[1]) > 1 || fabs(RZX[2]) > 1)
+    return Vec3(0,0,0);
+
+  Vec3 n =  (QRZ * Vec4(x, y, z, 1)).head(3).normalized();
+
+  float diffuse = max0(n.dot(back * light));
 
   Vec3 reflect = (2 * n.dot(light) * n - light);
   Vec3 view(0, 0, 1);
 
   float ambient = 0.2;
-  float specular = pow(max0(view.dot(reflect)), 8) * 0.4;
+  float specular = pow(max0(view.dot(back * reflect)), 8) * 0.4;
 
   float intensity = max1(ambient + 0.5 * diffuse);
   Vec3 color = intensity * Vec3(1, 1, 0) + specular * Vec3(1, 1, 1);
@@ -155,7 +168,7 @@ void draw_quadric(Buffer& buf) {
     for (size_t j = 0; j < buf.h; ++j) {
       float cx = (i * 2.0 / buf.w - 1) * 1.1;
       float cy = (j * 2.0 / buf.h - 1) * 1.1;
-      if (fabs(cx) > 1 || fabs(cy) > 1)continue;
+      // if (fabs(cx) > 1 || fabs(cy) > 1)continue;
       // intesect with quardric surface
       buf.set(i, j, raycast(cx, cy));
     }
