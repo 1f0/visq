@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <math.h>
 #include <AntTweakBar.h>
+#include <stdlib.h>
 
 using namespace std;
 using namespace Eigen;
@@ -124,7 +125,7 @@ Vec3 raycast(float x, float y) {
 
   if (a == 0) {//highlight z=[-\inf, \inf]
     if (fabs(c) < 0.005)
-      return Vec3(1, 1, 1);
+      z2 = z = 0;
     else
       return Vec3(0, 0, 0);
   } else {
@@ -134,24 +135,36 @@ Vec3 raycast(float x, float y) {
 
   Vec4 RZX = R * Z * Vec4(x, y, z, 1);
   Vec4 RZX2 = R * Z * Vec4(x, y, z2, 1);
-  float back = 1.0;
-  if(fabs(RZX[2])>1){
-    RZX[2] = RZX2[2];
-    back = -1.0;
+  bool back = false;
+  const float limit = 0.8;
+
+
+  if(fabs(RZX[0]) > limit || fabs(RZX[1]) > limit || fabs(RZX[2]) > limit){
+    RZX = RZX2;
+    back = true;
   }
 
-  if (fabs(RZX[0]) > 1 || fabs(RZX[1]) > 1 || fabs(RZX[2]) > 1)
+  if (fabs(RZX[0]) > limit || fabs(RZX[1]) > limit || fabs(RZX[2]) > limit)
     return Vec3(0,0,0);
 
-  Vec3 n =  (QRZ * Vec4(x, y, z, 1)).head(3).normalized();
+  float ambient = 0.2;
 
-  float diffuse = max0(n.dot(back * light));
+  // if(back)
+  //   return ambient * Vec3(1, 1, 0);
 
-  Vec3 reflect = (2 * n.dot(light) * n - light);
+  Vec3 n =  (Q * R * Z * Vec4(x, y, z, 1)).head(3).normalized();
+
+  Vec3 light_dir = (light * 2 - RZX.head(3)).normalized();
+
+  float diffuse = max0(n.dot(light_dir));
+
+  if(diffuse == 0)
+    return ambient * Vec3(1, 1, 0);
+
+  Vec3 reflect = (2 * n.dot(light_dir) * n - light_dir);
   Vec3 view(0, 0, 1);
 
-  float ambient = 0.2;
-  float specular = pow(max0(view.dot(back * reflect)), 8) * 0.4;
+  float specular = pow(max0(view.dot(reflect)), 8) * 0.4;
 
   float intensity = max1(ambient + 0.5 * diffuse);
   Vec3 color = intensity * Vec3(1, 1, 0) + specular * Vec3(1, 1, 1);
@@ -166,9 +179,8 @@ void draw_quadric(Buffer& buf) {
   light.normalize();
   for (size_t i = 0; i < buf.w; ++i) {
     for (size_t j = 0; j < buf.h; ++j) {
-      float cx = (i * 2.0 / buf.w - 1) * 1.1;
-      float cy = (j * 2.0 / buf.h - 1) * 1.1;
-      // if (fabs(cx) > 1 || fabs(cy) > 1)continue;
+      float cx = (i * 2.0 / buf.w - 1);
+      float cy = (j * 2.0 / buf.h - 1);
       // intesect with quardric surface
       buf.set(i, j, raycast(cx, cy));
     }
@@ -208,6 +220,68 @@ void my_terminate(void) {
   TwTerminate();
 }
 
+// Routine to set a quaternion from a rotation axis and angle
+// ( input axis = float[3] angle = float  output: quat = float[4] )
+void SetQuaternionFromAxisAngle(const float *axis, float angle, float *quat)
+{
+  float sina2, norm;
+  sina2 = (float)sin(0.5f * angle);
+  norm = (float)sqrt(axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]);
+  quat[0] = sina2 * axis[0] / norm;
+  quat[1] = sina2 * axis[1] / norm;
+  quat[2] = sina2 * axis[2] / norm;
+  quat[3] = (float)cos(0.5f * angle);
+}
+
+// Routine to multiply 2 quaternions (ie, compose rotations)
+// ( input q1 = float[4] q2 = float[4]  output: qout = float[4] )
+void MultiplyQuaternions(const float *q1, const float *q2, float *qout)
+{
+  float qr[4];
+  qr[0] = q1[3]*q2[0] + q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1];
+  qr[1] = q1[3]*q2[1] + q1[1]*q2[3] + q1[2]*q2[0] - q1[0]*q2[2];
+  qr[2] = q1[3]*q2[2] + q1[2]*q2[3] + q1[0]*q2[1] - q1[1]*q2[0];
+  qr[3]  = q1[3]*q2[3] - (q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2]);
+  qout[0] = qr[0]; qout[1] = qr[1]; qout[2] = qr[2]; qout[3] = qr[3];
+}
+
+void rotate_around_axis(float* axis, float angle){
+  float quat[4];
+  SetQuaternionFromAxisAngle(axis, angle, quat);
+  float g_RotateTemp[4];
+  MultiplyQuaternions(quat, g_Rotation, g_RotateTemp);
+  memcpy(g_Rotation, g_RotateTemp, sizeof(g_RotateTemp));
+}
+
+void inc_Lng(void *p){
+  float axis[3] = { 0, 1, 0 };
+  float angle = M_PI * 1/30.0f;
+  rotate_around_axis(axis, angle);
+}
+
+void inc_Lat(void *p){
+  float axis[3] = { 1, 0, 0 };
+  float angle = M_PI * 1/30.0f;
+  rotate_around_axis(axis, angle);
+}
+
+void dec_Lng(void *p){
+  float axis[3] = { 0, 1, 0 };
+  float angle = M_PI * -1/30.0f;
+  rotate_around_axis(axis, angle);
+}
+
+void dec_Lat(void *p){
+  float axis[3] = { 1, 0, 0 };
+  float angle = M_PI * -1/30.0f;
+  rotate_around_axis(axis, angle);
+}
+
+void reset_ang(void *p){
+  fill(g_Rotation, g_Rotation+3, 0);
+  g_Rotation[3] = 1;
+}
+
 int main(int argc, char *argv[]) {
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
@@ -236,7 +310,7 @@ int main(int argc, char *argv[]) {
 
   // Add 'g_Zoom' to 'bar': this is a modifable (RW) variable of type TW_TYPE_FLOAT. Its key shortcuts are [z] and [Z].
   TwAddVarRW(bar, "Zoom", TW_TYPE_FLOAT, &g_Zoom,
-             " min=0.01 max=2.5 step=0.01 keyIncr=z keyDecr=Z help='Scale the object (1=original size).' ");
+             " min=0.01 max=2.5 step=0.01 keyIncr=Z keyDecr=z help='Scale the object (1=original size).' ");
 
   // Add 'g_Rotation' to 'bar': this is a variable of type TW_TYPE_QUAT4F which defines the object's orientation
   TwAddVarRW(bar, "Rotation", TW_TYPE_QUAT4F, &g_Rotation,
@@ -257,6 +331,12 @@ int main(int argc, char *argv[]) {
 
   TwAddVarRW(bar, "Light", TW_TYPE_DIR3F, light.data(), 
                " label='Inv light dir' help='Change the light direction.' ");
+
+  TwAddButton(bar, "inc_Lng", inc_Lng, NULL, "key=d group='angle'");
+  TwAddButton(bar, "dec_Lng", dec_Lng, NULL, "key=a group='angle'");
+  TwAddButton(bar, "inc_Lat", inc_Lat, NULL, "key=s group='angle'");
+  TwAddButton(bar, "dec_Lat", dec_Lat, NULL, "key=w group='angle'");
+  TwAddButton(bar, "reset", reset_ang, NULL, "key=r group='angle'");
 
   glutMainLoop();
   return 0;
